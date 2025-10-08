@@ -1,0 +1,85 @@
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: streaming-benchmark
+spec:
+  type: Python
+  pythonVersion: "3"
+  mode: cluster
+  image: <your-image-name> # Change this!
+  imagePullPolicy: Always
+  mainApplicationFile: "local:///opt/spark/work-dir/streaming_benchmark.py"
+  sparkVersion: "3.3.1"
+
+  sparkConf:
+    # Network and timeout settings for stability
+    spark.network.timeout: 300s
+    spark.executor.heartbeatInterval: 120s
+    spark.kubernetes.local.dirs.tmpfs: "true"
+
+    # Streaming specific configurations
+    spark.streaming.backpressure.enabled: "false"
+    spark.sql.streaming.metricsEnabled: "true"
+
+    # Partition configuration
+    spark.default.parallelism: "60"
+    spark.sql.shuffle.partitions: "60"
+
+    # Memory and GC tuning for better performance
+    spark.executor.memoryOverhead: "2048"
+    spark.memory.fraction: "0.6"
+    spark.memory.storageFraction: "0.2"
+
+    # Python memory settings - each worker can use up to 3GB
+    spark.python.worker.memory: "3g"
+
+    # Ensure tasks don't run concurrently if memory constrained
+    spark.executor.cores: "2"
+
+    # customer settings
+    spark.executor.heartbeatInterval: 30s
+
+  # Arguments: batch interval in seconds
+  # Default is 5 seconds, adjust based on your needs
+  arguments:
+    - "5"
+
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 3
+    onFailureRetryInterval: 10
+    onSubmissionFailureRetries: 5
+    onSubmissionFailureRetryInterval: 20
+
+  driver:
+    nodeSelector:
+      scheduling.cast.ai/node-template: "drivers"
+    tolerations:
+      - key: "scheduling.cast.ai/node-template"
+        value: ""
+        effect: "NoSchedule"
+    cores: 2
+    coreLimit: "2000m"
+    memory: "12000m"
+    labels:
+      version: 3.3.1
+      app: streaming-benchmark
+    serviceAccount: spark
+
+  executor:
+    nodeSelector:
+      scheduling.cast.ai/node-template: "executors"
+    tolerations:
+      - key: "scheduling.cast.ai/node-template"
+        value: ""
+        effect: "NoSchedule"
+    cores: 2
+    coreLimit: "2000m"
+    instances: 15
+    # 6GB per executor (middle of 5-7GB range)
+    memory: "7144m"
+    memoryOverhead: "4024m"
+    labels:
+      version: 3.3.1
+      app: streaming-benchmark
+    serviceAccount: spark

@@ -1,0 +1,8 @@
+# Use the official Apache Spark Python base image
+FROM apache/spark-py:v3.3.1
+
+USER root
+RUN pip install pandas pyarrow
+
+# Copy the streaming benchmark application into the working directory
+COPY streaming_benchmark.py /opt/spark/work-dir/

@@ -1,0 +1,64 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: spark-pi
+  namespace: default
+spec:
+  type: Scala
+  mode: cluster
+  image: docker.io/library/spark:3.5.6
+  imagePullPolicy: IfNotPresent
+  mainClass: org.apache.spark.examples.SparkPi
+  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples.jar
+  arguments:
+  - "5000000"
+  sparkVersion: 3.5.6
+  sparkConf:
+    spark.executor.heartbeatInterval: 30s
+    spark.log.level: WARN
+    "spark.kubernetes.local.dirs.tmpfs": "true"
+  driver:
+    nodeSelector:
+      scheduling.cast.ai/node-template: "drivers"
+    tolerations:
+      - key: "scheduling.cast.ai/node-template"
+        value: ""
+        effect: "NoSchedule"
+    labels:
+      version: 3.5.6
+      autoscaling.cast.ai/removal-disabled: "true"
+    cores: 5
+    memory: 15000m
+    serviceAccount: spark-operator-spark
+    securityContext:
+      capabilities:
+        drop:
+        - ALL
+      runAsGroup: 185
+      runAsUser: 185
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      seccompProfile:
+        type: RuntimeDefault
+  executor:
+    nodeSelector:
+      scheduling.cast.ai/node-template: "executors"
+    tolerations:
+      - key: "scheduling.cast.ai/node-template"
+        value: ""
+        effect: "NoSchedule"
+    labels:
+      version: 3.5.6
+    instances: 15
+    cores: 1
+    memory: 512m
+    securityContext:
+      capabilities:
+        drop:
+        - ALL
+      runAsGroup: 185
+      runAsUser: 185
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      seccompProfile:
+        type: RuntimeDefault
