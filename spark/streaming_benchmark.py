@@ -2,6 +2,7 @@ import sys
 import time
 import random
 from pyspark import SparkContext
+from collections import deque
 from pyspark.streaming import StreamingContext
 
 def main():
@@ -35,7 +36,7 @@ def main():
 
     # Create a queue of RDDs to simulate streaming data
     # This will be the input stream
-    input_queue = []
+    input_queue = deque(maxlen=10)
 
     def generate_batch_data():
         """Generate synthetic data for each batch"""
