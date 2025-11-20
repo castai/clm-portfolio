@@ -14,18 +14,24 @@ After building don't forget to update the image in the `spark-streaming-benchmar
 ## Deploy
 
 Install spark:
+
 ```sh
+helm repo add spark-operator https://kubeflow.github.io/spark-operator
+helm repo update
+
 helm install spark-operator spark-operator/spark-operator \
     --namespace spark-operator \
     --create-namespace
 ```
 
 Give spark permissions:
+
 ```sh
 kubectl apply -f spark-accounts.yaml 
 ```
 
 Deploy the spark application:
+
 ```sh
 kubectl apply -f spark-streaming-benchmark.yaml
 ```
