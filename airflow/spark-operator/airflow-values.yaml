@@ -1,0 +1,71 @@
+# Apache Airflow Helm chart values for Setup 1 (Spark Operator)
+# Chart: apache-airflow/airflow v1.18.0 (Airflow 3.0.2)
+
+executor: "KubernetesExecutor"
+
+# API Server (serves the UI in Airflow 3.x)
+apiServer:
+  service:
+    type: NodePort
+    ports:
+      - name: api-server
+        port: 8080
+        targetPort: 8080
+        nodePort: 31080
+
+# Default user
+webserver:
+  defaultUser:
+    enabled: true
+    role: Admin
+    username: admin
+    email: admin@example.com
+    firstName: Admin
+    lastName: User
+    password: admin
+
+# DAGs from ConfigMap
+dags:
+  persistence:
+    enabled: false
+  gitSync:
+    enabled: false
+
+volumes:
+  - name: dags-configmap
+    configMap:
+      name: airflow-dags
+
+volumeMounts:
+  - name: dags-configmap
+    mountPath: /opt/airflow/dags/spark_submit_pi.py
+    subPath: spark_submit_pi.py
+    readOnly: true
+
+# Database — use built-in PostgreSQL
+postgresql:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: bitnami/postgresql
+    tag: latest
+
+# Redis not needed for KubernetesExecutor
+redis:
+  enabled: false
+
+# RBAC
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: airflow-worker
+
+# Disable example DAGs
+env:
+  - name: AIRFLOW__CORE__LOAD_EXAMPLES
+    value: "False"
+  # In-cluster Kubernetes connection for KubernetesPodOperator
+  - name: AIRFLOW_CONN_KUBERNETES_DEFAULT
+    value: "kubernetes://"

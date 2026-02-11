@@ -1,0 +1,33 @@
+# Apache Spark Kubernetes Operator Helm values
+# Chart: spark/spark-operator v2.4.0
+
+# Controller (operator) configuration
+controller:
+  serviceAccount:
+    create: true
+    name: spark-operator-controller
+  resources:
+    limits:
+      cpu: "500m"
+      ephemeral-storage: 1Gi
+      memory: 1Gi
+    requests:
+      cpu: "250m"
+      ephemeral-storage: 512Mi
+      memory: 512Mi
+
+# Webhook configuration
+webhook:
+  serviceAccount:
+    create: true
+    name: spark-operator-webhook
+
+# Spark application workload configuration
+spark:
+  jobNamespaces:
+    - airflow-spark-operator
+  serviceAccount:
+    create: true
+    name: spark
+  rbac:
+    create: true

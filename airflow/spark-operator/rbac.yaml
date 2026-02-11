@@ -1,0 +1,48 @@
+# RBAC for Airflow ServiceAccounts to manage SparkApplication CRDs
+# The Airflow helm chart (v1.18.0) creates separate SAs per component:
+#   airflow-scheduler, airflow-worker, airflow-api-server, etc.
+# The worker SA runs tasks, but scheduler and api-server also need access
+# for KubernetesExecutor pod creation and "airflow tasks test" respectively.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: airflow-spark-role
+  namespace: airflow-spark-operator
+rules:
+  # Permissions to manage SparkApplication CRDs (Apache Spark Operator)
+  - apiGroups: ["spark.apache.org"]
+    resources:
+      - sparkapplications
+      - sparkapplications/status
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+  # Permissions to manage pods (KubernetesPodOperator creates/deletes driver pods)
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: airflow-spark-rolebinding
+  namespace: airflow-spark-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: airflow-spark-role
+subjects:
+  # Airflow worker SA — runs SparkKubernetesOperator tasks via KubernetesExecutor
+  - kind: ServiceAccount
+    name: airflow-worker
+    namespace: airflow-spark-operator
+  # Airflow scheduler SA — creates worker pods (KubernetesExecutor)
+  - kind: ServiceAccount
+    name: airflow-scheduler
+    namespace: airflow-spark-operator
+  # Airflow api-server SA — needed for "airflow tasks test" from api-server pod
+  - kind: ServiceAccount
+    name: airflow-api-server
+    namespace: airflow-spark-operator

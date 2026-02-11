@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-dags
+  namespace: airflow-spark-operator
+data:
+  spark_submit_pi.py: |
+    """
+    Airflow DAG: Long-running PySpark PI Calculation via spark-submit
+
+    Uses KubernetesPodOperator to launch a pod that runs spark-submit.
+    The pod acts as the Spark driver (client mode) and creates executor pods
+    via the Kubernetes API.
+
+    A headless Service (spark-pi-driver-svc) provides a stable DNS hostname
+    that executors can connect back to. The service selects on the label
+    spark-role: driver which is applied to the pod.
+    """
+    from datetime import datetime, timedelta
+
+    from airflow import DAG
+    from airflow.providers.cncf.kubernetes.operators.pod import (
+        KubernetesPodOperator,
+    )
+    from kubernetes.client import models as k8s
+
+    NAMESPACE = "airflow-spark-operator"
+    DRIVER_SVC = "spark-pi-driver-svc"
+    DRIVER_PORT = "2222"
+    BLOCK_MGR_PORT = "7078"
+
+    default_args = {
+        "owner": "airflow",
+        "retries": 1,
+        "retry_delay": timedelta(minutes=2),
+    }
+
+    with DAG(
+        dag_id="spark_submit_pi",
+        default_args=default_args,
+        description="Long-running PySpark PI calculation via spark-submit",
+        schedule=None,
+        start_date=datetime(2026, 1, 1),
+        catchup=False,
+        tags=["spark", "spark-submit", "pyspark", "pi", "long-running"],
+    ) as dag:
+
+        run_pi_calc = KubernetesPodOperator(
+            task_id="pyspark_pi_calc",
+            name="spark-pi-driver",
+            namespace=NAMESPACE,
+            image="apache/spark:4.0.0-python3",
+            image_pull_policy="IfNotPresent",
+            labels={"spark-role": "driver"},
+            ports=[
+                k8s.V1ContainerPort(name="spark-driver", container_port=int(DRIVER_PORT)),
+                k8s.V1ContainerPort(name="spark-blkmgr", container_port=int(BLOCK_MGR_PORT)),
+            ],
+            # Inject the actual pod name via Kubernetes Downward API
+            container_resources=k8s.V1ResourceRequirements(
+                requests={"memory": "512Mi", "cpu": "500m"},
+                limits={"memory": "1Gi", "cpu": "1000m"},
+            ),
+            env_vars=[
+                k8s.V1EnvVar(
+                    name="POD_NAME",
+                    value_from=k8s.V1EnvVarSource(
+                        field_ref=k8s.V1ObjectFieldSelector(field_path="metadata.name")
+                    ),
+                ),
+            ],
+            # Use shell wrapper to inject POD_NAME dynamically into spark-submit
+            cmds=["/bin/bash"],
+            arguments=[
+                "-c",
+                f"""
+                echo "Current pod name: $POD_NAME"
+                /opt/spark/bin/spark-submit \\
+                  --master k8s://https://kubernetes.default.svc:443 \\
+                  --deploy-mode client \\
+                  --name pyspark-pi-calculation \\
+                  --conf spark.kubernetes.namespace={NAMESPACE} \\
+                  --conf spark.kubernetes.container.image=apache/spark:4.0.0-python3 \\
+                  --conf spark.kubernetes.container.image.pullPolicy=IfNotPresent \\
+                  --conf spark.kubernetes.authenticate.driver.serviceAccountName=spark \\
+                  --conf spark.driver.bindAddress=0.0.0.0 \\
+                  --conf spark.driver.host={DRIVER_SVC}.{NAMESPACE}.svc.cluster.local \\
+                  --conf spark.driver.port={DRIVER_PORT} \\
+                  --conf spark.driver.blockManager.port={BLOCK_MGR_PORT} \\
+                  --conf spark.kubernetes.driver.pod.name=$POD_NAME \\
+                  --conf spark.executor.instances=1 \\
+                  --conf spark.driver.memory=512m \\
+                  --conf spark.executor.memory=512m \\
+                  --conf spark.driver.cores=1 \\
+                  --conf spark.executor.cores=1 \\
+                  local:///opt/spark/examples/src/main/python/pi.py 1000
+                """,
+            ],
+            service_account_name="spark",
+            get_logs=True,
+            is_delete_operator_pod=False,
+            startup_timeout_seconds=300,
+        )
