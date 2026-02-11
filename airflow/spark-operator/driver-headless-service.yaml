@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-pi-driver-svc
+  namespace: airflow-spark-operator
+spec:
+  clusterIP: None  # Headless service
+  selector:
+    spark-role: driver
+  ports:
+    - name: spark-driver
+      port: 2222
+      targetPort: 2222
+    - name: spark-blkmgr
+      port: 7078
+      targetPort: 7078

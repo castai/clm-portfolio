@@ -1,0 +1,28 @@
+# SparkApplication YAML stored as a ConfigMap so the DAG can reference it
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-app-template
+  namespace: airflow-spark-operator
+data:
+  spark-wordcount-app.yaml: |
+    apiVersion: spark.apache.org/v1
+    kind: SparkApplication
+    metadata:
+      name: pyspark-wordcount
+      namespace: airflow-spark-operator
+    spec:
+      pythonFile: "local:///opt/spark/work-dir/wordcount.py"
+      sparkConf:
+        spark.kubernetes.container.image: "apache/spark:4.0.0-python3"
+        spark.kubernetes.container.image.pullPolicy: "IfNotPresent"
+        spark.kubernetes.authenticate.driver.serviceAccountName: "spark"
+        spark.executor.instances: "1"
+        spark.driver.memory: "512m"
+        spark.executor.memory: "512m"
+        spark.driver.cores: "1"
+        spark.executor.cores: "1"
+      runtimeVersions:
+        sparkVersion: "4.0.0"
+      resourceRetainPolicy: OnFailure
+      ttlAfterStopMillis: 30000
