@@ -28,8 +28,8 @@ spec:
       nodeSelector:
         live.cast.ai: "true"
       tolerations:
-        - key: "scheduling.cast.ai/node-template"
-          value: ""
+        - key: "scheduling.cast.ai/live-migration"
+          value: "true"
           effect: "NoSchedule"
       topologySpreadConstraints:
         - maxSkew: 1

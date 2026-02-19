@@ -2,18 +2,18 @@
 
 RG_NAME="filipe-19-02-2026"
 
-az group create --name "$RG_NAME" --location westcentralus
+az group create --name "$RG_NAME" --location northeurope
 az aks create \
-  --resource-group "$RG_NAME" \
-  --name "$RG_NAME" \
-  --location westcentralus \
-  --pod-cidr 192.168.0.0/16 \
-  --network-plugin none
+	--resource-group "$RG_NAME" \
+	--name "$RG_NAME" \
+	--location northeurope \
+	--pod-cidr 192.168.0.0/16 \
+	--network-plugin none
 
 echo "Waiting for Azure to propagate the cluster resource..."
 until az aks get-credentials --resource-group "$RG_NAME" --name "$RG_NAME" --overwrite-existing 2>/dev/null; do
-  echo "  Cluster not found yet, retrying in 30s..."
-  sleep 30
+	echo "  Cluster not found yet, retrying in 30s..."
+	sleep 30
 done
 echo "Credentials retrieved."
 
