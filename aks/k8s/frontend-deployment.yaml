@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-manager-frontend
+  namespace: risk-manager
+  labels:
+    app: risk-manager-frontend
+    app.kubernetes.io/part-of: risk-manager
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: risk-manager-frontend
+  template:
+    metadata:
+      labels:
+        app: risk-manager-frontend
+        app.kubernetes.io/part-of: risk-manager
+        app.kubernetes.io/component: frontend
+    spec:
+      terminationGracePeriodSeconds: 10
+      nodeSelector:
+        live.cast.ai: "true"
+      tolerations:
+        - key: "scheduling.cast.ai/node-template"
+          value: ""
+          effect: "NoSchedule"
+      containers:
+        - name: frontend
+          image: europe-central2-docker.pkg.dev/castlocal-filipe/live/risk-manager-frontend:latest
+          ports:
+            - containerPort: 80
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3

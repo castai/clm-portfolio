@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-manager-backend
+  namespace: risk-manager
+  labels:
+    app: risk-manager-backend
+    app.kubernetes.io/part-of: risk-manager
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: risk-manager-backend
+  template:
+    metadata:
+      labels:
+        app: risk-manager-backend
+        app.kubernetes.io/part-of: risk-manager
+        app.kubernetes.io/component: backend
+    spec:
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        live.cast.ai: "true"
+      tolerations:
+        - key: "scheduling.cast.ai/node-template"
+          value: ""
+          effect: "NoSchedule"
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: risk-manager-backend
+      containers:
+        - name: backend
+          image: europe-central2-docker.pkg.dev/castlocal-filipe/live/risk-manager-backend:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          env:
+            - name: AZURE_SQL_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: azure-sql-secret
+                  key: AZURE_SQL_CONNECTION_STRING
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "Production"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 2Gi
+            limits:
+              cpu: 500m
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 2
+            failureThreshold: 15
