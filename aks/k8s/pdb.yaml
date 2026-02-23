@@ -1,0 +1,25 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: risk-manager-backend-pdb
+  namespace: risk-manager
+  labels:
+    app.kubernetes.io/part-of: risk-manager
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: risk-manager-backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: risk-manager-frontend-pdb
+  namespace: risk-manager
+  labels:
+    app.kubernetes.io/part-of: risk-manager
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: risk-manager-frontend

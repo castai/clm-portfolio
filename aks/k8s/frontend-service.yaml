@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: risk-manager-frontend
+  namespace: risk-manager
+  labels:
+    app: risk-manager-frontend
+    app.kubernetes.io/part-of: risk-manager
+    app.kubernetes.io/component: frontend
+spec:
+  type: LoadBalancer
+  selector:
+    app: risk-manager-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http

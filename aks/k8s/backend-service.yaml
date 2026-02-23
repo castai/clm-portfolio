@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: risk-manager-backend
+  namespace: risk-manager
+  labels:
+    app: risk-manager-backend
+    app.kubernetes.io/part-of: risk-manager
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: risk-manager-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
