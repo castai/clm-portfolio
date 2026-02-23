@@ -203,7 +203,6 @@ aks/
 │   ├── build-and-push.sh           # Build linux/amd64 images, push to GCP AR
 │   ├── setup-azure-sql.sh          # Provision Azure SQL + K8s secret
 │   ├── deploy.sh                   # Deploy all manifests to K8s
-│   └── demo-migration.sh           # Trigger rolling restart for demo
 └── src/
     ├── backend/                    # .NET 8 API
     │   └── RiskManager.Api/
