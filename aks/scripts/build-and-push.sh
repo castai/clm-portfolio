@@ -7,7 +7,7 @@ set -euo pipefail
 # Uses buildx to cross-compile for amd64 from Apple Silicon
 # ============================================================================
 
-REGISTRY="europe-central2-docker.pkg.dev/castlocal-filipe/live"
+REGISTRY="add-you-registry-here"
 TAG="${1:-latest}"
 PLATFORM="linux/amd64"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,21 +35,21 @@ docker buildx inspect --bootstrap
 echo ""
 echo "[3/6] Building & pushing backend image (${PLATFORM})..."
 docker buildx build \
-	--platform "${PLATFORM}" \
-	--push \
-	-t "${REGISTRY}/risk-manager-backend:${TAG}" \
-	-f "${PROJECT_ROOT}/src/backend/RiskManager.Api/Dockerfile" \
-	"${PROJECT_ROOT}/src/backend/RiskManager.Api"
+  --platform "${PLATFORM}" \
+  --push \
+  -t "${REGISTRY}/risk-manager-backend:${TAG}" \
+  -f "${PROJECT_ROOT}/src/backend/RiskManager.Api/Dockerfile" \
+  "${PROJECT_ROOT}/src/backend/RiskManager.Api"
 
 # Build & push frontend
 echo ""
 echo "[4/6] Building & pushing frontend image (${PLATFORM})..."
 docker buildx build \
-	--platform "${PLATFORM}" \
-	--push \
-	-t "${REGISTRY}/risk-manager-frontend:${TAG}" \
-	-f "${PROJECT_ROOT}/src/frontend/Dockerfile" \
-	"${PROJECT_ROOT}/src/frontend"
+  --platform "${PLATFORM}" \
+  --push \
+  -t "${REGISTRY}/risk-manager-frontend:${TAG}" \
+  -f "${PROJECT_ROOT}/src/frontend/Dockerfile" \
+  "${PROJECT_ROOT}/src/frontend"
 
 echo ""
 echo "============================================"
