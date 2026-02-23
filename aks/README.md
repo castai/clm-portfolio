@@ -50,7 +50,7 @@ A real-time portfolio analytics platform used to demonstrate **container live mi
 | Frontend | React 18, TypeScript, Vite, Chart.js, Nginx |
 | Backend | .NET 8, ASP.NET Core, Entity Framework Core |
 | Database | Azure SQL (Basic tier, 5 DTU) |
-| Container Registry | GCP Artifact Registry (`europe-central2-docker.pkg.dev/castlocal-filipe/live`) |
+| Container Registry | GCP Artifact Registry |
 | Orchestration | Kubernetes (AKS with Calico CNI) |
 | Node Management | CAST AI |
 
