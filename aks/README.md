@@ -1,3 +1,19 @@
+# Installing CLM standalone
+
+At the moment of the writing we do not official support AKS onboading of CLM from Cast AI Console. So if you want to try this example you should execute the command manually.
+
+```bash
+ helm repo add castai https://castai.github.io/helm-charts || true
+ helm repo update castai
+ helm install test castai/castai-live --create-namespace \
+  --namespace ${HELM_NAMESPACE} \
+  --set castai.development=true \
+  --set castai-aws-vpc-cni.enabled=false \
+  --set castai.apiKey=${CAST_AI_CONSOLE_API_KEY} \
+  --set castai.apiURL=${CAST_AI_CONSOLE_API_URL} \
+  --set castai.clusterID=${CLUSTER_ID}
+```
+
 # Risk Manager - Container Live Migration Demo
 
 A real-time portfolio analytics platform used to demonstrate **container live migration with zero downtime** on Kubernetes. The application simulates a risk management dashboard (similar to BlackRock Aladdin) backed by Azure SQL, with live-ticking market data.
@@ -85,6 +101,7 @@ To tag a specific version:
 ```
 
 This script automatically:
+
 1. Detects the AKS cluster's **resource group** and **region** from your kubectl context
 2. Creates an Azure SQL Server (`risk-manager-sql-<random>`) in the same RG and region
 3. Creates the `RiskManagerDb` database (Basic tier, 5 DTU, ~$5/month)
@@ -101,6 +118,7 @@ The connection string is automatically injected into the backend pods via the K8
 ```
 
 Deploys all manifests in order:
+
 1. Namespace (`risk-manager`)
 2. Secrets (skips if already created by `setup-azure-sql.sh`)
 3. Backend deployment + service (3 replicas, 1 per node)
@@ -117,6 +135,7 @@ The script prints the **frontend external IP** at the end. Open it in a browser 
 ```
 
 With the dashboard open in a browser:
+
 1. Shows current pods and which nodes they're on
 2. Press ENTER to trigger a **rolling restart**
 3. Watch the status bar: **pod name changes** while charts/data keep updating
