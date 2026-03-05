@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csi-secret-test
+  namespace: vault-test
+  labels:
+    app: csi-secret-test
+    app.kubernetes.io/part-of: vault-secret-migration-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csi-secret-test
+  template:
+    metadata:
+      labels:
+        app: csi-secret-test
+    spec:
+      serviceAccountName: vault-test-sa
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: app
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "=== CSI Secret Test Pod ==="
+              echo "Node: $(cat /etc/hostname)"
+              echo "Waiting for secrets to appear at /mnt/secrets-store..."
+
+              # Wait for secret files to be populated
+              TIMEOUT=120
+              ELAPSED=0
+              while [ ! -f /mnt/secrets-store/username ] && [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+                echo "[WAIT] Secrets not yet available (${ELAPSED}s / ${TIMEOUT}s)..."
+                sleep 5
+                ELAPSED=$((ELAPSED + 5))
+              done
+
+              if [ ! -f /mnt/secrets-store/username ]; then
+                echo "[ERROR] Secrets not available after ${TIMEOUT}s. Exiting."
+                exit 1
+              fi
+
+              # Compute and log the initial hash — this is the baseline
+              INITIAL_HASH=$(cat /mnt/secrets-store/username /mnt/secrets-store/password /mnt/secrets-store/api_key | sha256sum | awk '{print $1}')
+              echo ""
+              echo "=========================================="
+              echo " BASELINE ESTABLISHED"
+              echo " initial_hash=${INITIAL_HASH}"
+              echo "=========================================="
+              echo ""
+
+              # Continuous loop: hash secrets every 10s and compare against baseline
+              ITERATION=0
+              while true; do
+                ITERATION=$((ITERATION + 1))
+                CURRENT_HASH=$(cat /mnt/secrets-store/username /mnt/secrets-store/password /mnt/secrets-store/api_key | sha256sum | awk '{print $1}')
+
+                if [ "$CURRENT_HASH" = "$INITIAL_HASH" ]; then
+                  STATUS="OK"
+                else
+                  STATUS="DRIFT_DETECTED"
+                fi
+
+                TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                echo "[${TIMESTAMP}] [CSI] iteration=${ITERATION} secret_hash=${CURRENT_HASH} baseline=${INITIAL_HASH} status=${STATUS}"
+
+                # Print individual secret values for manual inspection
+                for f in username password api_key; do
+                  VAL=$(cat /mnt/secrets-store/$f)
+                  echo "  ${f}=${VAL}"
+                done
+
+                echo ""
+                sleep 10
+              done
+          volumeMounts:
+            - name: vault-secrets
+              mountPath: /mnt/secrets-store
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+      volumes:
+        - name: vault-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: vault-test-spc
