@@ -48,6 +48,6 @@ echo ""
 echo "=== Setup 1 deployed! Waiting for pods to become ready... ==="
 kubectl wait --for=condition=ready pod -l component=api-server -n "${NAMESPACE}" --timeout=300s 2>/dev/null || true
 echo ""
-echo "Airflow UI: kubectl port-forward svc/airflow-api-server 8080:8080 -n ${NAMESPACE}"
-echo "Login: admin / admin"
+echo "Airflow UI: kubectl get svc airflow-api-server -n ${NAMESPACE}  # use EXTERNAL-IP:8080"
+echo "Login: admin / amsterdamkubecon2026"
 echo "DAG: spark_operator_wordcount"
