@@ -51,7 +51,11 @@ data:
             namespace=NAMESPACE,
             image="apache/spark:4.0.0-python3",
             image_pull_policy="IfNotPresent",
-            labels={"spark-role": "driver"},
+            labels={
+                "spark-role": "driver",
+                "autoscaling.cast.ai/removal-disabled": "true",
+                "autoscaling.cast.ai/live-migration-disabled": "true",
+            },
             ports=[
                 k8s.V1ContainerPort(name="spark-driver", container_port=int(DRIVER_PORT)),
                 k8s.V1ContainerPort(name="spark-blkmgr", container_port=int(BLOCK_MGR_PORT)),
