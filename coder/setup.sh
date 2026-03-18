@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 #
-# setup.sh — Deploy Coder on AWS EKS and create a workspace that builds
-#             the Linux kernel from source. The workspace pod carries CAST AI
-#             live-migration labels so it can be migrated with zero downtime.
+# setup.sh — Deploy Coder on AWS EKS and create workspaces for testing
+#             CAST AI live migration with heavy build workloads.
+#
+#   Workspace 1: kernel-build  — Linux kernel compilation (16 CPU, 96Gi, 50Gi gp2)
+#   Workspace 2: aosp-build    — AOSP build (32 CPU, 128Gi, 500Gi gp3)
+#
+# Both workspace pods carry CAST AI live-migration labels so they can be
+# migrated with zero downtime.
 #
 # Usage:
-#   ./setup.sh               # deploy Coder + PostgreSQL + create workspace
-#   ./setup.sh build          # trigger kernel build inside workspace
+#   ./setup.sh               # deploy Coder + PostgreSQL + create both workspaces
+#   ./setup.sh build          # trigger kernel build inside kernel-build workspace
+#   ./setup.sh sync-aosp      # sync AOSP source inside aosp-build workspace
+#   ./setup.sh build-aosp     # build AOSP inside aosp-build workspace
 #   ./setup.sh teardown       # remove everything
 #
 set -euo pipefail
@@ -21,6 +28,8 @@ PG_USER="coder"
 PG_DB="coder"
 CODER_TEMPLATE_NAME="kernel-build"
 CODER_WORKSPACE_NAME="kernel-build"
+AOSP_TEMPLATE_NAME="aosp-build"
+AOSP_WORKSPACE_NAME="aosp-build"
 CODER_FIRST_USER_EMAIL="admin@coder.local"
 CODER_FIRST_USER_USERNAME="admin"
 CODER_FIRST_USER_PASSWORD="castailive!"
@@ -63,11 +72,15 @@ teardown() {
 	# Kill any port-forward on coder port
 	lsof -ti:6770 | xargs kill -9 2>/dev/null || true
 
-	# Delete workspace via Coder CLI if available
+	# Delete workspaces and templates via Coder CLI if available
 	if command -v coder &>/dev/null; then
-		info "Deleting Coder workspace..."
+		info "Deleting AOSP workspace..."
+		coder delete "${AOSP_WORKSPACE_NAME}" --yes 2>/dev/null || true
+		info "Deleting kernel workspace..."
 		coder delete "${CODER_WORKSPACE_NAME}" --yes 2>/dev/null || true
-		info "Deleting Coder template..."
+		info "Deleting AOSP template..."
+		coder templates delete "${AOSP_TEMPLATE_NAME}" --yes 2>/dev/null || true
+		info "Deleting kernel template..."
 		coder templates delete "${CODER_TEMPLATE_NAME}" --yes 2>/dev/null || true
 	fi
 
@@ -118,6 +131,92 @@ build() {
 	ok "Build command completed."
 }
 
+# ─── AOSP sync command ───────────────────────────────────────────────────────
+sync_aosp() {
+	header "Syncing AOSP source (this will take several hours)"
+
+	if command -v coder &>/dev/null; then
+		info "Using Coder CLI to run sync-aosp..."
+		coder ssh "${AOSP_WORKSPACE_NAME}" -- sync-aosp
+	else
+		POD_NAME=$(kubectl get pods -n "${NAMESPACE}" \
+			-l "com.coder.workspace.name=${AOSP_WORKSPACE_NAME}" \
+			-o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+		if [[ -z "${POD_NAME}" ]]; then
+			err "No AOSP workspace pod found. Is the workspace deployed?"
+			exit 1
+		fi
+
+		info "Using kubectl exec on pod: ${POD_NAME}"
+		kubectl exec -n "${NAMESPACE}" "${POD_NAME}" -- sync-aosp
+	fi
+
+	ok "AOSP sync completed."
+}
+
+# ─── AOSP build command ──────────────────────────────────────────────────────
+build_aosp() {
+	header "Triggering AOSP build"
+
+	if command -v coder &>/dev/null; then
+		info "Using Coder CLI to run build-aosp..."
+		coder ssh "${AOSP_WORKSPACE_NAME}" -- build-aosp
+	else
+		POD_NAME=$(kubectl get pods -n "${NAMESPACE}" \
+			-l "com.coder.workspace.name=${AOSP_WORKSPACE_NAME}" \
+			-o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+		if [[ -z "${POD_NAME}" ]]; then
+			err "No AOSP workspace pod found. Is the workspace deployed?"
+			exit 1
+		fi
+
+		info "Using kubectl exec on pod: ${POD_NAME}"
+		kubectl exec -n "${NAMESPACE}" "${POD_NAME}" -- build-aosp
+	fi
+
+	ok "AOSP build command completed."
+}
+
+# ─── Wait for workspace agent helper ─────────────────────────────────────────
+wait_for_agent() {
+	local ws_name="$1"
+	local max_wait="${2:-90}"
+
+	info "Waiting for ${ws_name} agent to connect..."
+	local agent_status="unknown"
+	for i in $(seq 1 "${max_wait}"); do
+		agent_status=$(coder list --output json 2>/dev/null |
+			python3 -c "
+import sys, json
+ws = json.load(sys.stdin)
+for w in ws:
+    if w['name'] == '${ws_name}':
+        agents = w.get('latest_build', {}).get('resources', [])
+        for r in agents:
+            for a in r.get('agents', []):
+                print(a.get('status', 'unknown'))
+                sys.exit(0)
+print('unknown')
+" 2>/dev/null || echo "unknown")
+
+		if [[ "${agent_status}" == "connected" ]]; then
+			break
+		fi
+		echo -n "."
+		sleep 10
+	done
+	echo ""
+
+	if [[ "${agent_status}" != "connected" ]]; then
+		warn "${ws_name} agent not yet connected (status: ${agent_status}). It may still be starting up."
+		warn "Check: coder list"
+	else
+		ok "${ws_name} agent is connected"
+	fi
+}
+
 # ─── Deploy ───────────────────────────────────────────────────────────────────
 deploy() {
 	# ─── Pre-flight checks ────────────────────────────────────────────────────
@@ -141,8 +240,8 @@ deploy() {
 	# EBS CSI driver
 	info "Checking EBS CSI driver..."
 	if ! kubectl get csidriver ebs.csi.aws.com &>/dev/null; then
-		err "EBS CSI driver not found. Install it with:"
-		err "  aws eks create-addon --addon-name aws-ebs-csi-driver --cluster-name <cluster>"
+		err "EBS CSI driver not found. Run setup-ebs.sh first:"
+		err "  ./setup-ebs.sh"
 		exit 1
 	fi
 	ok "EBS CSI driver installed"
@@ -155,6 +254,14 @@ deploy() {
 		exit 1
 	fi
 	ok "StorageClass 'gp2' available"
+
+	info "Checking StorageClass 'gp3'..."
+	if ! kubectl get storageclass gp3 &>/dev/null; then
+		warn "StorageClass 'gp3' not found. Required for AOSP workspace (500Gi volume)."
+		warn "Run: ./setup-ebs.sh"
+	else
+		ok "StorageClass 'gp3' available"
+	fi
 
 	# ─── Phase 1: PostgreSQL ──────────────────────────────────────────────────
 	header "Phase 1: PostgreSQL"
@@ -285,29 +392,20 @@ deploy() {
 		fi
 	fi
 
-	# ─── Phase 4: Push template & create workspace ────────────────────────────
-	header "Phase 4: Template & Workspace"
+	# ─── Phase 4: Push templates & create workspaces ─────────────────────────
+	header "Phase 4: Templates & Workspaces"
 
-	# Push template
+	# ── 4a: Kernel build template & workspace ──
 	info "Pushing Coder template '${CODER_TEMPLATE_NAME}'..."
-	if coder templates list 2>/dev/null | grep -q "${CODER_TEMPLATE_NAME}"; then
-		info "Template exists — updating..."
-		coder templates push "${CODER_TEMPLATE_NAME}" \
-			--directory "${SCRIPT_DIR}/template" \
-			--variable "namespace=${NAMESPACE}" \
-			--yes
-	else
-		coder templates push "${CODER_TEMPLATE_NAME}" \
-			--directory "${SCRIPT_DIR}/template" \
-			--variable "namespace=${NAMESPACE}" \
-			--yes
-	fi
+	coder templates push "${CODER_TEMPLATE_NAME}" \
+		--directory "${SCRIPT_DIR}/template" \
+		--variable "namespace=${NAMESPACE}" \
+		--yes
 	ok "Template '${CODER_TEMPLATE_NAME}' pushed"
 
-	# Create workspace
 	info "Creating workspace '${CODER_WORKSPACE_NAME}'..."
 	if coder list 2>/dev/null | grep -q "${CODER_WORKSPACE_NAME}"; then
-		ok "Workspace already exists — skipping creation"
+		ok "Workspace '${CODER_WORKSPACE_NAME}' already exists — skipping"
 	else
 		coder create "${CODER_WORKSPACE_NAME}" \
 			--template "${CODER_TEMPLATE_NAME}" \
@@ -319,57 +417,77 @@ deploy() {
 		ok "Workspace '${CODER_WORKSPACE_NAME}' created"
 	fi
 
-	# Wait for workspace agent to connect
-	info "Waiting for workspace agent to connect..."
-	for i in $(seq 1 90); do
-		AGENT_STATUS=$(coder list --output json 2>/dev/null |
-			python3 -c "
-import sys, json
-ws = json.load(sys.stdin)
-for w in ws:
-    if w['name'] == '${CODER_WORKSPACE_NAME}':
-        agents = w.get('latest_build', {}).get('resources', [])
-        for r in agents:
-            for a in r.get('agents', []):
-                print(a.get('status', 'unknown'))
-                sys.exit(0)
-print('unknown')
-" 2>/dev/null || echo "unknown")
-
-		if [[ "${AGENT_STATUS}" == "connected" ]]; then
-			break
-		fi
-		echo -n "."
-		sleep 10
-	done
-	echo ""
-
-	if [[ "${AGENT_STATUS}" != "connected" ]]; then
-		warn "Agent not yet connected (status: ${AGENT_STATUS}). It may still be starting up."
-		warn "Check: coder list"
+	# ── 4b: AOSP build template & workspace ──
+	if ! kubectl get storageclass gp3 &>/dev/null; then
+		warn "Skipping AOSP workspace — gp3 StorageClass not found."
+		warn "Run: ./setup-ebs.sh --cluster <cluster-name>"
+		warn "Then re-run: ./setup.sh"
 	else
-		ok "Workspace agent is connected"
+		info "Pushing Coder template '${AOSP_TEMPLATE_NAME}'..."
+		coder templates push "${AOSP_TEMPLATE_NAME}" \
+			--directory "${SCRIPT_DIR}/template-aosp" \
+			--variable "namespace=${NAMESPACE}" \
+			--yes
+		ok "Template '${AOSP_TEMPLATE_NAME}' pushed"
+
+		info "Creating workspace '${AOSP_WORKSPACE_NAME}'..."
+		if coder list 2>/dev/null | grep -q "${AOSP_WORKSPACE_NAME}"; then
+			ok "Workspace '${AOSP_WORKSPACE_NAME}' already exists — skipping"
+		else
+			coder create "${AOSP_WORKSPACE_NAME}" \
+				--template "${AOSP_TEMPLATE_NAME}" \
+				--parameter "cpu=32" \
+				--parameter "memory=128" \
+				--parameter "memory_request=64" \
+				--parameter "home_disk_size=500" \
+				--yes
+			ok "Workspace '${AOSP_WORKSPACE_NAME}' created"
+		fi
+	fi
+
+	# Wait for agents to connect
+	wait_for_agent "${CODER_WORKSPACE_NAME}" 90
+	if kubectl get storageclass gp3 &>/dev/null; then
+		wait_for_agent "${AOSP_WORKSPACE_NAME}" 90
 	fi
 
 	# ─── Phase 5: Validation ──────────────────────────────────────────────────
 	header "Phase 5: Validation"
 
 	echo ""
-	info "=== Workspace Pods ==="
+	info "=== All Workspace Pods ==="
 	kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/name=coder-workspace" -o wide
 	echo ""
 
-	POD_NAME=$(kubectl get pods -n "${NAMESPACE}" \
-		-l "app.kubernetes.io/name=coder-workspace" \
-		-o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "unknown")
-	POD_NODE=$(kubectl get pods -n "${NAMESPACE}" \
-		-l "app.kubernetes.io/name=coder-workspace" \
-		-o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null || echo "unknown")
+	info "=== PVCs ==="
+	kubectl get pvc -n "${NAMESPACE}" -l "app.kubernetes.io/part-of=coder" -o wide 2>/dev/null || true
+	echo ""
 
-	info "=== Pod Labels ==="
-	kubectl get pod "${POD_NAME}" -n "${NAMESPACE}" \
+	info "=== Pod Labels (kernel-build) ==="
+	KERNEL_POD=$(kubectl get pods -n "${NAMESPACE}" \
+		-l "com.coder.workspace.name=${CODER_WORKSPACE_NAME}" \
+		-o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "unknown")
+	KERNEL_NODE=$(kubectl get pods -n "${NAMESPACE}" \
+		-l "com.coder.workspace.name=${CODER_WORKSPACE_NAME}" \
+		-o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null || echo "unknown")
+	kubectl get pod "${KERNEL_POD}" -n "${NAMESPACE}" \
 		-o jsonpath='{.metadata.labels}' 2>/dev/null | python3 -m json.tool 2>/dev/null || true
 	echo ""
+
+	AOSP_POD="not deployed"
+	AOSP_NODE="n/a"
+	if kubectl get storageclass gp3 &>/dev/null; then
+		info "=== Pod Labels (aosp-build) ==="
+		AOSP_POD=$(kubectl get pods -n "${NAMESPACE}" \
+			-l "com.coder.workspace.name=${AOSP_WORKSPACE_NAME}" \
+			-o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "unknown")
+		AOSP_NODE=$(kubectl get pods -n "${NAMESPACE}" \
+			-l "com.coder.workspace.name=${AOSP_WORKSPACE_NAME}" \
+			-o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null || echo "unknown")
+		kubectl get pod "${AOSP_POD}" -n "${NAMESPACE}" \
+			-o jsonpath='{.metadata.labels}' 2>/dev/null | python3 -m json.tool 2>/dev/null || true
+		echo ""
+	fi
 
 	# ─── Summary ──────────────────────────────────────────────────────────────
 	header "Setup Complete"
@@ -379,16 +497,22 @@ print('unknown')
   Components deployed:
     Coder control plane   : Helm release 'coder' in namespace '${NAMESPACE}'
     PostgreSQL            : Helm release 'postgresql' in namespace '${PG_NAMESPACE}'
-    Template              : '${CODER_TEMPLATE_NAME}' (Kubernetes + CAST AI labels)
-    Workspace             : '${CODER_WORKSPACE_NAME}' (16 CPU, 32Gi req / 96Gi limit, 50Gi disk)
+
+  Workspaces:
+    ${CODER_WORKSPACE_NAME}  : 16 CPU, 32Gi req / 96Gi limit, 50Gi gp2 disk
+      Template  : '${CODER_TEMPLATE_NAME}'
+      Pod       : ${KERNEL_POD}
+      Node      : ${KERNEL_NODE}
+
+    ${AOSP_WORKSPACE_NAME}   : 32 CPU, 64Gi req / 128Gi limit, 500Gi gp3 disk
+      Template  : '${AOSP_TEMPLATE_NAME}'
+      Pod       : ${AOSP_POD}
+      Node      : ${AOSP_NODE}
 
   Coder URL  : ${CODER_URL}  (via port-forward, PID: ${PORT_FORWARD_PID})
   Internal   : http://coder.${NAMESPACE}.svc.cluster.local:80  (used by agents)
   Username   : ${CODER_FIRST_USER_USERNAME}
   Password   : ${CODER_FIRST_USER_PASSWORD}
-
-  Pod        : ${POD_NAME}
-  Node       : ${POD_NODE}
 
   ──────────────────────────────────────────────────────────────
   ACCESS
@@ -402,33 +526,45 @@ print('unknown')
   Dashboard: ${CODER_URL}
 
   ──────────────────────────────────────────────────────────────
-  HOW TO TEST LIVE MIGRATION
+  HOW TO TEST LIVE MIGRATION — KERNEL BUILD
   ──────────────────────────────────────────────────────────────
 
-  1. Trigger the kernel build (workspace is currently idle):
-
+  1. Trigger the kernel build:
      ./setup.sh build
        or
      coder ssh ${CODER_WORKSPACE_NAME} -- build-kernel
 
-  2. Note the current node: ${POD_NODE}
+  2. Note the node: ${KERNEL_NODE}
 
-  3. Once the build is running, trigger a CAST AI live migration
-     via the CAST AI console or API.
+  3. Trigger a CAST AI live migration via console or API.
 
-  4. After migration, verify:
+  4. Verify:
+     kubectl get pod -n ${NAMESPACE} ${KERNEL_POD} -o wide
+     coder ssh ${CODER_WORKSPACE_NAME} -- pgrep -fa make
+     coder list
 
-     a. Pod is on a new node:
-        kubectl get pod -n ${NAMESPACE} ${POD_NAME} -o wide
+  ──────────────────────────────────────────────────────────────
+  HOW TO TEST LIVE MIGRATION — AOSP BUILD
+  ──────────────────────────────────────────────────────────────
 
-     b. Build process survived:
-        coder ssh ${CODER_WORKSPACE_NAME} -- pgrep -fa make
+  1. Sync AOSP source (takes 2-4 hours):
+     ./setup.sh sync-aosp
+       or
+     coder ssh ${AOSP_WORKSPACE_NAME} -- sync-aosp
 
-     c. Coder agent reconnected:
-        coder list
+  2. Build AOSP (takes 4-8 hours):
+     ./setup.sh build-aosp
+       or
+     coder ssh ${AOSP_WORKSPACE_NAME} -- build-aosp
 
-     d. Build artifacts (after completion):
-        coder ssh ${CODER_WORKSPACE_NAME} -- ls -la ~/linux/vmlinux
+  3. While the build is running, trigger a CAST AI live migration.
+
+  4. Verify:
+     kubectl get pod -n ${NAMESPACE} ${AOSP_POD} -o wide
+     coder ssh ${AOSP_WORKSPACE_NAME} -- pgrep -fa make
+     coder list
+
+  ──────────────────────────────────────────────────────────────
 
   To tear down everything:
      ./setup.sh teardown
@@ -440,10 +576,12 @@ EOF
 case "${1:-}" in
 teardown) teardown ;;
 build) build ;;
+sync-aosp) sync_aosp ;;
+build-aosp) build_aosp ;;
 "") deploy ;;
 *)
 	err "Unknown command: ${1}"
-	err "Usage: ./setup.sh [build|teardown]"
+	err "Usage: ./setup.sh [build|sync-aosp|build-aosp|teardown]"
 	exit 1
 	;;
 esac
