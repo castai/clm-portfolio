@@ -113,7 +113,7 @@ build() {
 	# Try Coder CLI first, fall back to kubectl
 	if command -v coder &>/dev/null; then
 		info "Using Coder CLI to run build-kernel..."
-		coder ssh "${CODER_WORKSPACE_NAME}" -- build-kernel
+		coder ssh "${CODER_WORKSPACE_NAME}" 'build-kernel'
 	else
 		POD_NAME=$(kubectl get pods -n "${NAMESPACE}" \
 			-l "app.kubernetes.io/name=coder-workspace" \
@@ -137,7 +137,7 @@ sync_aosp() {
 
 	if command -v coder &>/dev/null; then
 		info "Using Coder CLI to run sync-aosp..."
-		coder ssh "${AOSP_WORKSPACE_NAME}" -- sync-aosp
+		coder ssh "${AOSP_WORKSPACE_NAME}" 'sync-aosp'
 	else
 		POD_NAME=$(kubectl get pods -n "${NAMESPACE}" \
 			-l "com.coder.workspace.name=${AOSP_WORKSPACE_NAME}" \
@@ -157,11 +157,18 @@ sync_aosp() {
 
 # ─── AOSP build command ──────────────────────────────────────────────────────
 build_aosp() {
-	header "Triggering AOSP build"
+	header "Triggering AOSP build (this will take 4-8 hours)"
 
+	# Run AOSP build inline to avoid issues with stale scripts on workspace.
+	# The lunch command format changed in newer AOSP to require 3 parts:
+	#   lunch <product> <release> <variant>
+	# instead of the legacy: lunch <product>-<variant>
 	if command -v coder &>/dev/null; then
-		info "Using Coder CLI to run build-aosp..."
-		coder ssh "${AOSP_WORKSPACE_NAME}" -- build-aosp
+		info "Starting AOSP build..."
+		info "Command: source envsetup.sh -> lunch -> make"
+		info "Use 'coder ssh aosp-build' to monitor progress"
+
+		coder ssh "${AOSP_WORKSPACE_NAME}" 'bash -c "cd ~/AOSP && set +u && source build/envsetup.sh && lunch aosp_cf_x86_64_phone trunk_staging userdebug && set -u && make -j\$(nproc)"'
 	else
 		POD_NAME=$(kubectl get pods -n "${NAMESPACE}" \
 			-l "com.coder.workspace.name=${AOSP_WORKSPACE_NAME}" \
@@ -173,7 +180,7 @@ build_aosp() {
 		fi
 
 		info "Using kubectl exec on pod: ${POD_NAME}"
-		kubectl exec -n "${NAMESPACE}" "${POD_NAME}" -- build-aosp
+		kubectl exec -n "${NAMESPACE}" "${POD_NAME}" -- bash -c 'cd ~/AOSP && set +u && source build/envsetup.sh && lunch aosp_cf_x86_64_phone trunk_staging userdebug && set -u && make -j$(nproc)'
 	fi
 
 	ok "AOSP build command completed."

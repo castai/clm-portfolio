@@ -167,7 +167,7 @@ resource "coder_agent" "main" {
     #   3. repo sync -c -j8
     sudo tee /usr/local/bin/sync-aosp > /dev/null <<'SCRIPT'
     #!/usr/bin/env bash
-    set -eux
+    set -ex
     AOSP_DIR="$HOME/AOSP"
     mkdir -p "$AOSP_DIR"
     cd "$AOSP_DIR"
@@ -198,7 +198,7 @@ resource "coder_agent" "main" {
     #   3. make -j16
     sudo tee /usr/local/bin/build-aosp > /dev/null <<'SCRIPT'
     #!/usr/bin/env bash
-    set -eux
+    set -ex
     AOSP_DIR="$HOME/AOSP"
 
     if [ ! -f "$AOSP_DIR/build/envsetup.sh" ]; then
@@ -208,9 +208,12 @@ resource "coder_agent" "main" {
 
     cd "$AOSP_DIR"
 
-    # source envsetup.sh and lunch must run in the same shell
+    # AOSP's envsetup.sh uses uninitialized variables, so disable -u
+    set +u
     source build/envsetup.sh
-    lunch aosp_cf_x86_64_phone-userdebug
+    lunch aosp_cf_x86_64_phone trunk_staging userdebug
+    set -u
+
     make -j$(nproc)
 
     echo "=== AOSP build complete ==="
@@ -351,8 +354,9 @@ resource "kubernetes_deployment_v1" "main" {
 
       spec {
         security_context {
-          run_as_user = 1000
-          fs_group    = 1000
+          run_as_user            = 1000
+          fs_group               = 1000
+          fs_group_change_policy = "OnRootMismatch"
         }
 
         # -- CAST AI node placement --
