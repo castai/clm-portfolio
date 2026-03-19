@@ -404,6 +404,10 @@ resource "kubernetes_deployment_v1" "main" {
 
           security_context {
             run_as_user = "1000"
+
+            capabilities {
+              add = ["SYS_ADMIN", "SYS_CHROOT", "SETUID", "SETGID", "SYS_PTRACE"]
+            }
           }
 
           env {
