@@ -1,0 +1,34 @@
+# Coder Helm values for CAST AI live-migration PoC
+#
+# This deploys the Coder control plane on EKS.
+# Workspaces are created via Terraform templates and scheduled
+# onto CAST AI live-migration-enabled nodes.
+#
+# Access is via kubectl port-forward (no LoadBalancer / no public internet).
+# Agents connect via the cluster-internal service URL.
+
+coder:
+  env:
+    - name: CODER_PG_CONNECTION_URL
+      valueFrom:
+        secretKeyRef:
+          name: coder-db-url
+          key: url
+
+    - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
+      value: "false"
+
+    # Cluster-internal URL so agents can reach coderd without leaving the cluster
+    - name: CODER_ACCESS_URL
+      value: "http://coder.coder.svc.cluster.local:80"
+
+  service:
+    type: ClusterIP
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
