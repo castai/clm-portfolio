@@ -11,10 +11,12 @@
 #
 # Usage:
 #   ./setup.sh               # deploy Coder + PostgreSQL + create both workspaces
-#   ./setup.sh build          # trigger kernel build inside kernel-build workspace
-#   ./setup.sh sync-aosp      # sync AOSP source inside aosp-build workspace
-#   ./setup.sh build-aosp     # build AOSP inside aosp-build workspace
-#   ./setup.sh teardown       # remove everything
+#   ./setup.sh push          # push template changes to Coder
+#   ./setup.sh restart       # restart workspaces to apply template changes
+#   ./setup.sh build         # trigger kernel build inside kernel-build workspace
+#   ./setup.sh sync-aosp     # sync AOSP source inside aosp-build workspace
+#   ./setup.sh build-aosp    # build AOSP inside aosp-build workspace
+#   ./setup.sh teardown      # remove everything
 #
 set -euo pipefail
 
@@ -106,6 +108,60 @@ teardown() {
 	exit 0
 }
 
+# ─── Push templates ────────────────────────────────────────────────────────────
+push_templates() {
+	header "Pushing Coder templates"
+
+	if ! command -v coder &>/dev/null; then
+		err "coder CLI is required but not found in PATH"
+		exit 1
+	fi
+
+	info "Pushing template '${CODER_TEMPLATE_NAME}'..."
+	coder templates push "${CODER_TEMPLATE_NAME}" \
+		--directory "${SCRIPT_DIR}/template" \
+		--variable "namespace=${NAMESPACE}" \
+		--yes
+	ok "Template '${CODER_TEMPLATE_NAME}' pushed"
+
+	info "Pushing template '${AOSP_TEMPLATE_NAME}'..."
+	coder templates push "${AOSP_TEMPLATE_NAME}" \
+		--directory "${SCRIPT_DIR}/template-aosp" \
+		--variable "namespace=${NAMESPACE}" \
+		--yes
+	ok "Template '${AOSP_TEMPLATE_NAME}' pushed"
+
+	ok "All templates pushed"
+}
+
+# ─── Restart workspaces ─────────────────────────────────────────────────────────
+restart_workspaces() {
+	header "Restarting workspaces"
+
+	if ! command -v coder &>/dev/null; then
+		err "coder CLI is required but not found in PATH"
+		exit 1
+	fi
+
+	info "Stopping workspace '${CODER_WORKSPACE_NAME}'..."
+	coder stop "${CODER_WORKSPACE_NAME}" --yes 2>/dev/null || true
+	ok "Stopped '${CODER_WORKSPACE_NAME}'"
+
+	info "Stopping workspace '${AOSP_WORKSPACE_NAME}'..."
+	coder stop "${AOSP_WORKSPACE_NAME}" --yes 2>/dev/null || true
+	ok "Stopped '${AOSP_WORKSPACE_NAME}'"
+
+	info "Starting workspace '${CODER_WORKSPACE_NAME}'..."
+	coder start "${CODER_WORKSPACE_NAME}"
+	ok "Started '${CODER_WORKSPACE_NAME}'"
+
+	info "Starting workspace '${AOSP_WORKSPACE_NAME}'..."
+	coder start "${AOSP_WORKSPACE_NAME}"
+	ok "Started '${AOSP_WORKSPACE_NAME}'"
+
+	ok "All workspaces restarted"
+}
+
 # ─── Build command ────────────────────────────────────────────────────────────
 build() {
 	header "Triggering kernel build"
@@ -159,6 +215,21 @@ sync_aosp() {
 build_aosp() {
 	header "Triggering AOSP build (this will take 4-8 hours)"
 
+	# Get the AOSP workspace pod name
+	AOSP_POD=$(kubectl get pods -n "${NAMESPACE}" \
+		-l "com.coder.workspace.name=${AOSP_WORKSPACE_NAME}" \
+		-o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+	if [[ -z "${AOSP_POD}" ]]; then
+		err "No AOSP workspace pod found. Is the workspace deployed?"
+		exit 1
+	fi
+
+	# Clean up out folder before building
+	info "Cleaning up AOSP out folder..."
+	kubectl exec -n "${NAMESPACE}" "${AOSP_POD}" -- rm -rf /home/coder/AOSP/out 2>/dev/null || true
+	ok "AOSP out folder cleaned"
+
 	# Run AOSP build inline to avoid issues with stale scripts on workspace.
 	# The lunch command format changed in newer AOSP to require 3 parts:
 	#   lunch <product> <release> <variant>
@@ -170,17 +241,8 @@ build_aosp() {
 
 		coder ssh "${AOSP_WORKSPACE_NAME}" 'bash -c "cd ~/AOSP && set +u && source build/envsetup.sh && lunch aosp_cf_x86_64_phone trunk_staging userdebug && set -u && make -j\$(nproc)"'
 	else
-		POD_NAME=$(kubectl get pods -n "${NAMESPACE}" \
-			-l "com.coder.workspace.name=${AOSP_WORKSPACE_NAME}" \
-			-o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-		if [[ -z "${POD_NAME}" ]]; then
-			err "No AOSP workspace pod found. Is the workspace deployed?"
-			exit 1
-		fi
-
-		info "Using kubectl exec on pod: ${POD_NAME}"
-		kubectl exec -n "${NAMESPACE}" "${POD_NAME}" -- bash -c 'cd ~/AOSP && set +u && source build/envsetup.sh && lunch aosp_cf_x86_64_phone trunk_staging userdebug && set -u && make -j$(nproc)'
+		info "Using kubectl exec on pod: ${AOSP_POD}"
+		kubectl exec -n "${NAMESPACE}" "${AOSP_POD}" -- bash -c 'cd ~/AOSP && set +u && source build/envsetup.sh && lunch aosp_cf_x86_64_phone trunk_staging userdebug && set -u && make -j$(nproc)'
 	fi
 
 	ok "AOSP build command completed."
@@ -585,10 +647,12 @@ teardown) teardown ;;
 build) build ;;
 sync-aosp) sync_aosp ;;
 build-aosp) build_aosp ;;
+push) push_templates ;;
+restart) restart_workspaces ;;
 "") deploy ;;
 *)
 	err "Unknown command: ${1}"
-	err "Usage: ./setup.sh [build|sync-aosp|build-aosp|teardown]"
+	err "Usage: ./setup.sh [build|sync-aosp|build-aosp|push|restart|teardown]"
 	exit 1
 	;;
 esac

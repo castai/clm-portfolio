@@ -133,6 +133,20 @@ resource "coder_agent" "main" {
   startup_script = <<-EOT
     set -e
 
+    # Configure SSH client keepalive for better resilience during network disruptions (e.g., live migration)
+    mkdir -p ~/.ssh
+    cat > ~/.ssh/config <<'SSHKEEPALIVE'
+Host *
+    ServerAliveInterval 10
+    ServerAliveCountMax 360
+    TCPKeepAlive yes
+    ConnectTimeout 300
+    ConnectionAttempts 50
+    ServerAliveInterval 60
+    RekeyLimit 0
+SSHKEEPALIVE
+    chmod 600 ~/.ssh/config
+
     # ── Install AOSP build dependencies ──────────────────────────────────────
     # Reference: https://source.android.com/docs/setup/start
     export DEBIAN_FRONTEND=noninteractive
@@ -208,6 +222,8 @@ resource "coder_agent" "main" {
 
     cd "$AOSP_DIR"
 
+    rm -rf out
+
     # AOSP's envsetup.sh uses uninitialized variables, so disable -u
     set +u
     source build/envsetup.sh
@@ -230,7 +246,7 @@ resource "coder_agent" "main" {
     key          = "0_cpu_usage"
     script       = "coder stat cpu"
     interval     = 10
-    timeout      = 1
+    timeout      = 120
   }
 
   metadata {
@@ -238,7 +254,7 @@ resource "coder_agent" "main" {
     key          = "1_ram_usage"
     script       = "coder stat mem"
     interval     = 10
-    timeout      = 1
+    timeout      = 120
   }
 
   metadata {
@@ -246,7 +262,7 @@ resource "coder_agent" "main" {
     key          = "3_home_disk"
     script       = "coder stat disk --path $${HOME}"
     interval     = 60
-    timeout      = 1
+    timeout      = 120
   }
 
   metadata {
@@ -254,7 +270,7 @@ resource "coder_agent" "main" {
     key          = "4_cpu_usage_host"
     script       = "coder stat cpu --host"
     interval     = 10
-    timeout      = 1
+    timeout      = 120
   }
 
   metadata {
@@ -262,7 +278,7 @@ resource "coder_agent" "main" {
     key          = "5_mem_usage_host"
     script       = "coder stat mem --host"
     interval     = 10
-    timeout      = 1
+    timeout      = 120
   }
 }
 
