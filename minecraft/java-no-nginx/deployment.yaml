@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft-java-no-nginx
+  namespace: minecraft-java-no-nginx
+  labels:
+    app: minecraft-java-no-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minecraft-java-no-nginx
+  template:
+    metadata:
+      labels:
+        app: minecraft-java-no-nginx
+    spec:
+      nodeSelector:
+        karpenter.sh/nodepool: spaya
+      containers:
+        - name: minecraft-java-no-nginx
+          image: itzg/minecraft-server:latest
+          imagePullPolicy: Always
+          env:
+            - name: EULA
+              value: "TRUE"
+            - name: TYPE
+              value: "VANILLA"
+            - name: VERSION
+              value: "LATEST"
+            - name: MEMORY
+              value: "2G"
+            - name: ONLINE_MODE
+              value: "FALSE"
+          ports:
+            - name: minecraft
+              containerPort: 25565
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 25565
+            initialDelaySeconds: 1
+            periodSeconds: 1
+            failureThreshold: 30
+          livenessProbe:
+            tcpSocket:
+              port: 25565
+            initialDelaySeconds: 1
+            periodSeconds: 1
+            failureThreshold: 30
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}

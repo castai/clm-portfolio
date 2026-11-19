@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: minecraft-java-no-nginx
+  namespace: minecraft-java-no-nginx
+spec:
+  type: LoadBalancer
+  selector:
+    app: minecraft-java-no-nginx
+  ports:
+    - name: minecraft
+      protocol: TCP
+      port: 25565
+      targetPort: 25565

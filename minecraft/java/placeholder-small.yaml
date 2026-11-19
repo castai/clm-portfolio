@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dummy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dummy
+  template:
+    metadata:
+      labels:
+        app: dummy
+        autoscaling.cast.ai/removal-disabled: "true"
+    spec:
+      nodeSelector:
+        scheduling.cast.ai/node-template: "live_tmpl"
+      tolerations:
+        - key: "scheduling.cast.ai/node-template"
+          value: ""
+          effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: dummy
+              topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+      containers:
+        - name: dummy
+          image: ubuntu
+          command:
+            [
+              "sh",
+              "-c",
+              "apt-get update && apt-get install -y strace && strace sleep 3600",
+            ]
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "4"

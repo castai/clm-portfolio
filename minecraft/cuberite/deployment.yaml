@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cuberite
+  labels:
+    app: cuberite
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cuberite
+  template:
+    metadata:
+      labels:
+        app: cuberite
+    spec:
+      nodeSelector:
+        karpenter.sh/nodepool: spaya
+      containers:
+        - name: cuberite
+          image: lkup77/cuberite:v3
+          imagePullPolicy: Always
+          workingDir: /cuberite
+          command:
+            ["/bin/sh", "-c", "./Cuberite --detached || tail -f /dev/null"]
+          ports:
+            - containerPort: 25565
+            - containerPort: 8080
+          volumeMounts:
+            - name: webadmin-config
+              mountPath: /cuberite/webadmin.ini
+              subPath: webadmin.ini
+            - name: webadmin-config
+              mountPath: /cuberite/settings.ini
+              subPath: settings.ini
+      volumes:
+        - name: webadmin-config
+          configMap:
+            name: cuberite-webadmin-config

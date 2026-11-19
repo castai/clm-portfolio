@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft-java-nginx
+  namespace: minecraft-java
+  labels:
+    app: minecraft-java-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minecraft-java-nginx
+  template:
+    metadata:
+      labels:
+        app: minecraft-java-nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:stable-alpine
+          ports:
+            - name: minecraft-proxy
+              containerPort: 25565
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: minecraft-java-nginx-config

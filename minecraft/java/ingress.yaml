@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minecraft-java-nginx
+  namespace: minecraft-java
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/backend-protocol: "TCP"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: minecraft.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minecraft-java-nginx
+                port:
+                  number: 25565

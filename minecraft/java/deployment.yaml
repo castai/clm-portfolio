@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft-java
+  namespace: minecraft-java
+  labels:
+    app: minecraft-java
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minecraft-java
+  template:
+    metadata:
+      labels:
+        app: minecraft-java
+    spec:
+      nodeSelector:
+        live.cast.ai/migration-enabled: "true"
+      containers:
+        - name: minecraft-java
+          image: itzg/minecraft-server:latest
+          imagePullPolicy: Always
+          env:
+            - name: EULA
+              value: "TRUE"
+            - name: TYPE
+              value: "VANILLA"
+            - name: VERSION
+              value: "LATEST"
+            - name: MEMORY
+              value: "2G"
+            - name: ONLINE_MODE
+              value: "FALSE"
+          ports:
+            - name: minecraft
+              containerPort: 25565
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 25565
+            initialDelaySeconds: 1
+            periodSeconds: 3
+          livenessProbe:
+            tcpSocket:
+              port: 25565
+            initialDelaySeconds: 1
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}

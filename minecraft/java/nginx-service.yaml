@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: minecraft-java-nginx
+  namespace: minecraft-java
+  labels:
+    app: minecraft-java-nginx
+spec:
+  type: ClusterIP
+  selector:
+    app: minecraft-java-nginx
+  ports:
+    - name: minecraft-proxy
+      protocol: TCP
+      port: 25565
+      targetPort: 25565
