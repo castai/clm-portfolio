@@ -59,10 +59,12 @@ This runs 7 steps:
 ## Access the Airflow UI
 
 ```bash
-kubectl port-forward svc/airflow-api-server 8080:8080 -n airflow-spark-operator
+kubectl get svc airflow-api-server -n airflow-spark-operator
 ```
 
-Open http://localhost:8080 and log in with `admin` / `admin`.
+Use the `EXTERNAL-IP` from the LoadBalancer service: `http://<EXTERNAL-IP>:8080`
+
+Log in with `admin` / `amsterdamkubecon2026`.
 
 ## Trigger the DAG
 

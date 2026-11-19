@@ -5,13 +5,23 @@ executor: "KubernetesExecutor"
 
 # API Server (serves the UI in Airflow 3.x)
 apiServer:
+  podLabels:
+    autoscaling.cast.ai/removal-disabled: "true"
+    autoscaling.cast.ai/live-migration-disabled: "true"
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: spark-role
+                operator: Exists
+          topologyKey: kubernetes.io/hostname
   service:
-    type: NodePort
+    type: LoadBalancer
     ports:
       - name: api-server
         port: 8080
         targetPort: 8080
-        nodePort: 31080
 
 # Default user
 webserver:
@@ -22,7 +32,7 @@ webserver:
     email: admin@example.com
     firstName: Admin
     lastName: User
-    password: admin
+    password: amsterdamkubecon2026
 
 # DAGs from ConfigMap
 dags:
